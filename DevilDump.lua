@@ -1,8 +1,105 @@
 --==============================================================
--- DEVIL DUMP V4.1
--- PREMIUM RESPONSIVE MOBILE UI
--- Replace the UI section of V4 with this block
+-- DEVIL DUMP V4.2
+-- FULL STANDALONE / MOBILE RESPONSIVE / PASSIVE REMOTE LIVE
 --==============================================================
+
+--==============================================================
+-- SERVICES
+--==============================================================
+
+local Players = game:GetService("Players")
+local TweenService = game:GetService("TweenService")
+local UserInputService = game:GetService("UserInputService")
+local RunService = game:GetService("RunService")
+local CollectionService = game:GetService("CollectionService")
+
+local Player = Players.LocalPlayer
+
+if not Player then
+    warn("[DEVIL DUMP] LocalPlayer unavailable")
+    return
+end
+
+local PlayerGui = Player:WaitForChild("PlayerGui", 15)
+
+if not PlayerGui then
+    warn("[DEVIL DUMP] PlayerGui unavailable")
+    return
+end
+
+--==============================================================
+-- CONFIG
+--==============================================================
+
+local CONFIG = {
+    ToggleKey = Enum.KeyCode.RightShift,
+
+    Folder = "DevilDump",
+
+    BaseWidth = 820,
+    BaseHeight = 500,
+
+    MarginX = 26,
+    MarginY = 26,
+
+    MaxConsoleLines = 14,
+    MaxLiveEntries = 15000,
+
+    AutoSaveEvery = 50
+}
+
+--==============================================================
+-- FILE SUPPORT
+--==============================================================
+
+local FILE_SUPPORT =
+    type(writefile) == "function"
+
+local FOLDER_SUPPORT =
+    type(makefolder) == "function"
+    and type(isfolder) == "function"
+
+local function ensureFolder()
+    if not FOLDER_SUPPORT then
+        return false
+    end
+
+    local ok = pcall(function()
+        if not isfolder(CONFIG.Folder) then
+            makefolder(CONFIG.Folder)
+        end
+    end)
+
+    return ok
+end
+
+ensureFolder()
+
+--==============================================================
+-- STATE
+--==============================================================
+
+local State = {
+    Dumping = false,
+
+    Instances = 0,
+    Scripts = 0,
+    Remotes = 0,
+
+    LastDumpFile = nil
+}
+
+local Live = {
+    Enabled = false,
+
+    Count = 0,
+
+    Entries = {},
+    Connections = {},
+    Registered = {},
+
+    File = nil
+}
 
 --==============================================================
 -- THEME
@@ -10,6 +107,7 @@
 
 local C = {
     Background = Color3.fromRGB(5, 7, 12),
+
     Surface = Color3.fromRGB(10, 14, 23),
     Surface2 = Color3.fromRGB(14, 19, 31),
     Surface3 = Color3.fromRGB(19, 25, 40),
@@ -19,6 +117,7 @@ local C = {
 
     Blue = Color3.fromRGB(72, 128, 255),
     BlueSoft = Color3.fromRGB(95, 151, 255),
+
     Purple = Color3.fromRGB(137, 92, 255),
     Cyan = Color3.fromRGB(77, 211, 255),
 
@@ -28,6 +127,7 @@ local C = {
 
     Text = Color3.fromRGB(244, 247, 255),
     Text2 = Color3.fromRGB(190, 200, 222),
+
     Muted = Color3.fromRGB(122, 135, 164),
     Muted2 = Color3.fromRGB(77, 89, 116)
 }
@@ -39,10 +139,10 @@ local C = {
 local function create(className, properties)
     local object = Instance.new(className)
 
-    for propertyName, value in pairs(properties or {}) do
-        if propertyName ~= "Parent" then
+    for property, value in pairs(properties or {}) do
+        if property ~= "Parent" then
             pcall(function()
-                object[propertyName] = value
+                object[property] = value
             end)
         end
     end
@@ -54,14 +154,14 @@ local function create(className, properties)
     return object
 end
 
-local function addCorner(parent, radius)
+local function corner(parent, radius)
     return create("UICorner", {
         CornerRadius = UDim.new(0, radius or 12),
         Parent = parent
     })
 end
 
-local function addStroke(parent, color, transparency, thickness)
+local function stroke(parent, color, transparency, thickness)
     return create("UIStroke", {
         Color = color or C.Border,
         Transparency = transparency or 0,
@@ -70,19 +170,9 @@ local function addStroke(parent, color, transparency, thickness)
     })
 end
 
-local function addPadding(parent, left, right, top, bottom)
-    return create("UIPadding", {
-        PaddingLeft = UDim.new(0, left or 0),
-        PaddingRight = UDim.new(0, right or 0),
-        PaddingTop = UDim.new(0, top or 0),
-        PaddingBottom = UDim.new(0, bottom or 0),
-        Parent = parent
-    })
-end
-
-local function makeLabel(
+local function label(
     parent,
-    value,
+    text,
     position,
     size,
     font,
@@ -95,10 +185,11 @@ local function makeLabel(
         Position = position or UDim2.new(),
         Size = size or UDim2.fromOffset(100, 20),
 
-        Text = value or "",
+        Text = text or "",
 
         Font = font or Enum.Font.Gotham,
         TextSize = textSize or 13,
+
         TextColor3 = color or C.Text,
 
         TextXAlignment = Enum.TextXAlignment.Left,
@@ -108,14 +199,14 @@ local function makeLabel(
     })
 end
 
-local function makeButton(
+local function button(
     parent,
-    value,
+    text,
     position,
     size,
     background
 )
-    local buttonObject = create("TextButton", {
+    local b = create("TextButton", {
         AutoButtonColor = false,
 
         Position = position,
@@ -124,81 +215,81 @@ local function makeButton(
         BackgroundColor3 = background or C.Surface2,
         BorderSizePixel = 0,
 
-        Text = value,
+        Text = text,
 
         Font = Enum.Font.GothamSemibold,
-        TextSize = 11,
+        TextSize = 10,
         TextColor3 = C.Text,
 
         Parent = parent
     })
 
-    addCorner(buttonObject, 10)
+    corner(b, 10)
 
-    local buttonStroke = addStroke(
-        buttonObject,
+    local s = stroke(
+        b,
         C.Border,
-        .35,
+        0.35,
         1
     )
 
-    buttonObject.MouseEnter:Connect(function()
+    b.MouseEnter:Connect(function()
         TweenService:Create(
-            buttonObject,
-            TweenInfo.new(.14),
+            b,
+            TweenInfo.new(0.12),
             {
                 BackgroundColor3 = C.Surface3
             }
         ):Play()
 
         TweenService:Create(
-            buttonStroke,
-            TweenInfo.new(.14),
+            s,
+            TweenInfo.new(0.12),
             {
                 Color = C.BorderBright,
-                Transparency = .1
+                Transparency = 0.1
             }
         ):Play()
     end)
 
-    buttonObject.MouseLeave:Connect(function()
+    b.MouseLeave:Connect(function()
         TweenService:Create(
-            buttonObject,
-            TweenInfo.new(.14),
+            b,
+            TweenInfo.new(0.12),
             {
                 BackgroundColor3 = background or C.Surface2
             }
         ):Play()
 
         TweenService:Create(
-            buttonStroke,
-            TweenInfo.new(.14),
+            s,
+            TweenInfo.new(0.12),
             {
                 Color = C.Border,
-                Transparency = .35
+                Transparency = 0.35
             }
         ):Play()
     end)
 
-    return buttonObject
+    return b
 end
 
 --==============================================================
--- REMOVE OLD UI
+-- REMOVE PREVIOUS GUI
 --==============================================================
 
-local existing = PlayerGui:FindFirstChild("DEVIL_DUMP_V4")
+local old = PlayerGui:FindFirstChild("DEVIL_DUMP_V42")
 
-if existing then
-    existing:Destroy()
+if old then
+    old:Destroy()
 end
 
 --==============================================================
--- ROOT GUI
+-- GUI
 --==============================================================
 
 local GUI = create("ScreenGui", {
-    Name = "DEVIL_DUMP_V4",
+    Name = "DEVIL_DUMP_V42",
 
     ResetOnSpawn = false,
     IgnoreGuiInset = true,
@@ -211,16 +302,18 @@ local GUI = create("ScreenGui", {
 })
 
 --==============================================================
--- IMPORTANT:
--- CanvasGroup receives touch input and helps isolate our UI.
+-- ROOT
 --==============================================================
 
 local Root = create("CanvasGroup", {
-    AnchorPoint = Vector2.new(.5, .5),
+    AnchorPoint = Vector2.new(0.5, 0.5),
 
-    Position = UDim2.fromScale(.5, .5),
+    Position = UDim2.fromScale(0.5, 0.5),
 
-    Size = UDim2.fromOffset(820, 500),
+    Size = UDim2.fromOffset(
+        CONFIG.BaseWidth,
+        CONFIG.BaseHeight
+    ),
 
     BackgroundColor3 = C.Background,
     BorderSizePixel = 0,
@@ -230,18 +323,8 @@ local Root = create("CanvasGroup", {
     Parent = GUI
 })
 
-addCorner(Root, 18)
-
-local RootStroke = addStroke(
-    Root,
-    C.BorderBright,
-    .35,
-    1
-)
-
---==============================================================
--- SCALE
---==============================================================
+corner(Root, 18)
+stroke(Root, C.BorderBright, 0.35)
 
 local UIScaleObject = create("UIScale", {
     Scale = 1,
@@ -249,16 +332,10 @@ local UIScaleObject = create("UIScale", {
 })
 
 --==============================================================
--- MOBILE / TABLET / PC RESPONSIVE ENGINE
+-- RESPONSIVE ENGINE
 --==============================================================
 
-local BASE_WIDTH = 820
-local BASE_HEIGHT = 500
-
-local SAFE_MARGIN_X = 26
-local SAFE_MARGIN_Y = 26
-
-local function calculateResponsiveScale()
+local function updateScale()
     local camera = workspace.CurrentCamera
 
     if not camera then
@@ -267,103 +344,51 @@ local function calculateResponsiveScale()
 
     local viewport = camera.ViewportSize
 
-    local availableWidth =
+    local availableX =
         math.max(
-            viewport.X - SAFE_MARGIN_X * 2,
+            viewport.X - CONFIG.MarginX * 2,
             100
         )
 
-    local availableHeight =
+    local availableY =
         math.max(
-            viewport.Y - SAFE_MARGIN_Y * 2,
+            viewport.Y - CONFIG.MarginY * 2,
             100
         )
 
-    local widthScale =
-        availableWidth / BASE_WIDTH
+    local sx =
+        availableX / CONFIG.BaseWidth
 
-    local heightScale =
-        availableHeight / BASE_HEIGHT
+    local sy =
+        availableY / CONFIG.BaseHeight
 
-    local finalScale =
-        math.min(
-            widthScale,
-            heightScale,
-            1
-        )
-
-    ----------------------------------------------------------
-    -- PHONE ADJUSTMENTS
-    ----------------------------------------------------------
+    local scale =
+        math.min(sx, sy, 1)
 
     if UserInputService.TouchEnabled then
-
-        -- Small phones
-        if viewport.X < 700 then
-            finalScale *= .93
-
-        -- Medium phones / landscape
-        elseif viewport.X < 1000 then
-            finalScale *= .95
-
-        -- Tablets
-        else
-            finalScale *= .97
-        end
+        scale = scale * 0.94
     end
 
-    ----------------------------------------------------------
-    -- Never touch screen edges
-    ----------------------------------------------------------
+    UIScaleObject.Scale =
+        math.clamp(scale, 0.28, 1)
+end
 
-    finalScale = math.clamp(
-        finalScale,
-        .32,
-        1
-    )
-
-    UIScaleObject.Scale = finalScale
-
-    ----------------------------------------------------------
-    -- Keep centered after resolution/orientation changes
-    ----------------------------------------------------------
+local function centerWindow()
+    Root.AnchorPoint =
+        Vector2.new(0.5, 0.5)
 
     Root.Position =
-        UDim2.fromScale(.5, .5)
+        UDim2.fromScale(0.5, 0.5)
 end
 
-local function bindCamera()
-    local camera = workspace.CurrentCamera
-
-    if not camera then
-        return
-    end
-
-    camera
-        :GetPropertyChangedSignal("ViewportSize")
-        :Connect(calculateResponsiveScale)
-end
-
-calculateResponsiveScale()
-bindCamera()
-
-workspace:GetPropertyChangedSignal(
-    "CurrentCamera"
-):Connect(function()
-
-    task.wait()
-
-    calculateResponsiveScale()
-    bindCamera()
-end)
+updateScale()
+centerWindow()
 
 --==============================================================
--- TOP ACCENT
+-- ACCENT
 --==============================================================
 
 local Accent = create("Frame", {
-    Position = UDim2.new(0, 0, 0, 0),
-
     Size = UDim2.new(1, 0, 0, 2),
 
     BackgroundColor3 = C.Blue,
@@ -380,7 +405,7 @@ create("UIGradient", {
         ),
 
         ColorSequenceKeypoint.new(
-            .52,
+            0.5,
             C.Purple
         ),
 
@@ -409,7 +434,23 @@ local Header = create("Frame", {
     Parent = Root
 })
 
-local BrandIcon = create("Frame", {
+local DragArea = create("TextButton", {
+    Size = UDim2.fromScale(1, 1),
+
+    BackgroundTransparency = 1,
+
+    Text = "",
+
+    AutoButtonColor = false,
+
+    Active = true,
+
+    ZIndex = 1,
+
+    Parent = Header
+})
+
+local Brand = create("Frame", {
     Position = UDim2.fromOffset(20, 16),
 
     Size = UDim2.fromOffset(36, 36),
@@ -418,10 +459,12 @@ local BrandIcon = create("Frame", {
 
     BorderSizePixel = 0,
 
+    ZIndex = 3,
+
     Parent = Header
 })
 
-addCorner(BrandIcon, 10)
+corner(Brand, 10)
 
 create("UIGradient", {
     Rotation = 45,
@@ -438,76 +481,88 @@ create("UIGradient", {
         )
     }),
 
-    Parent = BrandIcon
+    Parent = Brand
 })
 
-local BrandLetter = makeLabel(
-    BrandIcon,
+local BrandText = label(
+    Brand,
     "D",
     UDim2.new(),
     UDim2.fromScale(1, 1),
     Enum.Font.GothamBold,
     17,
-    Color3.new(1, 1, 1)
+    C.Text
 )
 
-BrandLetter.TextXAlignment =
+BrandText.TextXAlignment =
     Enum.TextXAlignment.Center
 
-makeLabel(
+BrandText.ZIndex = 4
+
+local Title = label(
     Header,
     "DEVIL DUMP",
-    UDim2.fromOffset(68, 14),
-    UDim2.fromOffset(260, 23),
+    UDim2.fromOffset(68, 13),
+    UDim2.fromOffset(270, 23),
     Enum.Font.GothamBold,
     16,
     C.Text
 )
 
-makeLabel(
+Title.ZIndex = 3
+
+local Subtitle = label(
     Header,
     "CLIENT INSPECTOR / REMOTE LIVE",
     UDim2.fromOffset(68, 36),
-    UDim2.fromOffset(300, 17),
+    UDim2.fromOffset(300, 16),
     Enum.Font.GothamMedium,
     9,
     C.Muted
 )
 
+Subtitle.ZIndex = 3
+
 local Version = create("TextLabel", {
-    AnchorPoint = Vector2.new(1, .5),
+    AnchorPoint = Vector2.new(1, 0.5),
 
-    Position = UDim2.new(1, -67, .5, 0),
+    Position = UDim2.new(
+        1,
+        -65,
+        0.5,
+        0
+    ),
 
-    Size = UDim2.fromOffset(55, 24),
+    Size = UDim2.fromOffset(50, 24),
 
     BackgroundColor3 = C.Surface2,
 
     BorderSizePixel = 0,
 
-    Text = "V4.1",
+    Text = "V4.2",
 
     Font = Enum.Font.GothamBold,
 
     TextSize = 9,
-
     TextColor3 = C.BlueSoft,
+
+    ZIndex = 4,
 
     Parent = Header
 })
 
-addCorner(Version, 7)
-addStroke(Version, C.Blue, .65)
+corner(Version, 7)
+stroke(Version, C.Blue, 0.65)
 
-local Close = makeButton(
+local Close = button(
     Header,
     "X",
-    UDim2.new(1, -44, .5, -14),
+    UDim2.new(1, -44, 0.5, -14),
     UDim2.fromOffset(28, 28),
     C.Surface2
 )
 
-Close.TextSize = 10
+Close.ZIndex = 5
 
 --==============================================================
 -- DIVIDER
@@ -519,7 +574,7 @@ create("Frame", {
     Size = UDim2.new(1, -40, 0, 1),
 
     BackgroundColor3 = C.Border,
-    BackgroundTransparency = .55,
+    BackgroundTransparency = 0.55,
 
     BorderSizePixel = 0,
 
@@ -527,7 +582,7 @@ create("Frame", {
 })
 
 --==============================================================
--- LEFT SIDEBAR
+-- SIDEBAR
 --==============================================================
 
 local Sidebar = create("Frame", {
@@ -541,10 +596,10 @@ local Sidebar = create("Frame", {
     Parent = Root
 })
 
-addCorner(Sidebar, 13)
-addStroke(Sidebar, C.Border, .42)
+corner(Sidebar, 13)
+stroke(Sidebar, C.Border, 0.42)
 
-makeLabel(
+label(
     Sidebar,
     "CONTROL CENTER",
     UDim2.fromOffset(14, 12),
@@ -554,13 +609,9 @@ makeLabel(
     C.Muted
 )
 
---==============================================================
--- NAV BUTTON FACTORY
---==============================================================
-
 local function navButton(
-    title,
-    subtitle,
+    titleText,
+    subtitleText,
     y,
     accentColor
 )
@@ -580,32 +631,26 @@ local function navButton(
         Parent = Sidebar
     })
 
-    addCorner(b, 10)
-
-    local bs = addStroke(
-        b,
-        C.Border,
-        .5
-    )
+    corner(b, 10)
+    stroke(b, C.Border, 0.5)
 
     local bar = create("Frame", {
         Position = UDim2.fromOffset(0, 11),
 
         Size = UDim2.fromOffset(3, 34),
 
-        BackgroundColor3 =
-            accentColor or C.Blue,
+        BackgroundColor3 = accentColor,
 
         BorderSizePixel = 0,
 
         Parent = b
     })
 
-    addCorner(bar, 3)
+    corner(bar, 3)
 
-    makeLabel(
+    label(
         b,
-        title,
+        titleText,
         UDim2.fromOffset(13, 8),
         UDim2.new(1, -24, 0, 19),
         Enum.Font.GothamSemibold,
@@ -613,57 +658,15 @@ local function navButton(
         C.Text
     )
 
-    makeLabel(
+    label(
         b,
-        subtitle,
+        subtitleText,
         UDim2.fromOffset(13, 28),
         UDim2.new(1, -24, 0, 16),
         Enum.Font.Gotham,
         8,
         C.Muted
     )
-
-    b.MouseEnter:Connect(function()
-
-        TweenService:Create(
-            b,
-            TweenInfo.new(.12),
-            {
-                BackgroundColor3 =
-                    C.Surface3
-            }
-        ):Play()
-
-        TweenService:Create(
-            bs,
-            TweenInfo.new(.12),
-            {
-                Transparency = .2
-            }
-        ):Play()
-
-    end)
-
-    b.MouseLeave:Connect(function()
-
-        TweenService:Create(
-            b,
-            TweenInfo.new(.12),
-            {
-                BackgroundColor3 =
-                    C.Surface2
-            }
-        ):Play()
-
-        TweenService:Create(
-            bs,
-            TweenInfo.new(.12),
-            {
-                Transparency = .5
-            }
-        ):Play()
-
-    end)
 
     return b
 end
@@ -677,7 +680,7 @@ local FullDumpButton = navButton(
 
 local LiveButton = navButton(
     "REMOTE LIVE",
-    "Capture incoming activity",
+    "Passive incoming monitor",
     103,
     C.Cyan
 )
@@ -690,13 +693,23 @@ local ClearButton = navButton(
 )
 
 --==============================================================
--- LIVE STATUS
+-- LIVE CARD
 --==============================================================
 
 local LiveCard = create("Frame", {
-    Position = UDim2.new(0, 10, 1, -103),
+    Position = UDim2.new(
+        0,
+        10,
+        1,
+        -103
+    ),
 
-    Size = UDim2.new(1, -20, 0, 91),
+    Size = UDim2.new(
+        1,
+        -20,
+        0,
+        91
+    ),
 
     BackgroundColor3 = C.Background,
 
@@ -705,8 +718,8 @@ local LiveCard = create("Frame", {
     Parent = Sidebar
 })
 
-addCorner(LiveCard, 10)
-addStroke(LiveCard, C.Border, .5)
+corner(LiveCard, 10)
+stroke(LiveCard, C.Border, 0.5)
 
 local LiveDot = create("Frame", {
     Position = UDim2.fromOffset(13, 14),
@@ -720,9 +733,9 @@ local LiveDot = create("Frame", {
     Parent = LiveCard
 })
 
-addCorner(LiveDot, 100)
+corner(LiveDot, 100)
 
-local LiveStateText = makeLabel(
+local LiveStateText = label(
     LiveCard,
     "REMOTE LIVE OFF",
     UDim2.fromOffset(29, 7),
@@ -732,7 +745,7 @@ local LiveStateText = makeLabel(
     C.Muted
 )
 
-local LiveCountText = makeLabel(
+local LiveCountText = label(
     LiveCard,
     "0 events captured",
     UDim2.fromOffset(13, 33),
@@ -742,7 +755,7 @@ local LiveCountText = makeLabel(
     C.Muted
 )
 
-local LiveFileText = makeLabel(
+local LiveFileText = label(
     LiveCard,
     "No active session",
     UDim2.fromOffset(13, 52),
@@ -761,7 +774,12 @@ LiveFileText.TextWrapped = true
 local Content = create("Frame", {
     Position = UDim2.fromOffset(207, 86),
 
-    Size = UDim2.new(1, -225, 1, -107),
+    Size = UDim2.new(
+        1,
+        -225,
+        1,
+        -107
+    ),
 
     BackgroundTransparency = 1,
 
@@ -782,8 +800,8 @@ local StatusCard = create("Frame", {
     Parent = Content
 })
 
-addCorner(StatusCard, 13)
-addStroke(StatusCard, C.Border, .42)
+corner(StatusCard, 13)
+stroke(StatusCard, C.Border, 0.42)
 
 local StatusDot = create("Frame", {
     Position = UDim2.fromOffset(15, 15),
@@ -797,9 +815,9 @@ local StatusDot = create("Frame", {
     Parent = StatusCard
 })
 
-addCorner(StatusDot, 100)
+corner(StatusDot, 100)
 
-local Status = makeLabel(
+local Status = label(
     StatusCard,
     "READY",
     UDim2.fromOffset(32, 8),
@@ -809,7 +827,7 @@ local Status = makeLabel(
     C.Green
 )
 
-local Detail = makeLabel(
+local Detail = label(
     StatusCard,
     "Waiting for command",
     UDim2.fromOffset(15, 30),
@@ -823,9 +841,19 @@ Detail.TextTruncate =
     Enum.TextTruncate.AtEnd
 
 local ProgressBG = create("Frame", {
-    Position = UDim2.new(0, 15, 1, -10),
+    Position = UDim2.new(
+        0,
+        15,
+        1,
+        -10
+    ),
 
-    Size = UDim2.new(1, -30, 0, 3),
+    Size = UDim2.new(
+        1,
+        -30,
+        0,
+        3
+    ),
 
     BackgroundColor3 = C.Surface3,
 
@@ -834,7 +862,7 @@ local ProgressBG = create("Frame", {
     Parent = StatusCard
 })
 
-addCorner(ProgressBG, 100)
+corner(ProgressBG, 100)
 
 local Progress = create("Frame", {
     Size = UDim2.fromScale(0, 1),
@@ -846,31 +874,10 @@ local Progress = create("Frame", {
     Parent = ProgressBG
 })
 
-addCorner(Progress, 100)
-
-create("UIGradient", {
-    Color = ColorSequence.new({
-        ColorSequenceKeypoint.new(
-            0,
-            C.Blue
-        ),
-
-        ColorSequenceKeypoint.new(
-            .55,
-            C.Purple
-        ),
-
-        ColorSequenceKeypoint.new(
-            1,
-            C.Cyan
-        )
-    }),
-
-    Parent = Progress
-})
+corner(Progress, 100)
 
 --==============================================================
--- STATS CARDS
+-- STATS
 --==============================================================
 
 local StatsRow = create("Frame", {
@@ -883,24 +890,18 @@ local StatsRow = create("Frame", {
     Parent = Content
 })
 
-local function createStatCard(
-    index,
-    title,
-    accentColor
-)
-    local gap = 8
-
+local function statCard(x, titleText, color)
     local card = create("Frame", {
         Position = UDim2.new(
-            (index - 1) * .25,
-            index == 1 and 0 or gap / 2,
+            x,
+            x == 0 and 0 or 3,
             0,
             0
         ),
 
         Size = UDim2.new(
-            .25,
-            -gap + 2,
+            0.25,
+            -6,
             1,
             0
         ),
@@ -912,68 +913,66 @@ local function createStatCard(
         Parent = StatsRow
     })
 
-    addCorner(card, 11)
-    addStroke(card, C.Border, .5)
+    corner(card, 10)
+    stroke(card, C.Border, 0.5)
 
     create("Frame", {
-        Position = UDim2.fromOffset(10, 10),
+        Position = UDim2.fromOffset(9, 10),
 
         Size = UDim2.fromOffset(3, 17),
 
-        BackgroundColor3 = accentColor,
+        BackgroundColor3 = color,
 
         BorderSizePixel = 0,
 
         Parent = card
     })
 
-    makeLabel(
+    label(
         card,
-        title,
-        UDim2.fromOffset(19, 7),
-        UDim2.new(1, -25, 0, 17),
+        titleText,
+        UDim2.fromOffset(18, 7),
+        UDim2.new(1, -23, 0, 17),
         Enum.Font.GothamBold,
         7,
         C.Muted
     )
 
-    local value = makeLabel(
+    return label(
         card,
         "0",
-        UDim2.fromOffset(11, 27),
-        UDim2.new(1, -22, 0, 23),
+        UDim2.fromOffset(10, 27),
+        UDim2.new(1, -20, 0, 23),
         Enum.Font.GothamBold,
         16,
         C.Text
     )
-
-    return value
 end
 
 local InstanceStat =
-    createStatCard(
-        1,
+    statCard(
+        0,
         "INSTANCES",
         C.Blue
     )
 
 local ScriptStat =
-    createStatCard(
-        2,
+    statCard(
+        0.25,
         "SCRIPTS",
         C.Purple
     )
 
 local RemoteStat =
-    createStatCard(
-        3,
+    statCard(
+        0.50,
         "REMOTES",
         C.Cyan
     )
 
 local LiveStat =
-    createStatCard(
-        4,
+    statCard(
+        0.75,
         "LIVE",
         C.Green
     )
@@ -985,7 +984,12 @@ local LiveStat =
 local ConsoleCard = create("Frame", {
     Position = UDim2.fromOffset(0, 148),
 
-    Size = UDim2.new(1, 0, 1, -207),
+    Size = UDim2.new(
+        1,
+        0,
+        1,
+        -207
+    ),
 
     BackgroundColor3 = C.Surface,
 
@@ -994,10 +998,10 @@ local ConsoleCard = create("Frame", {
     Parent = Content
 })
 
-addCorner(ConsoleCard, 12)
-addStroke(ConsoleCard, C.Border, .48)
+corner(ConsoleCard, 12)
+stroke(ConsoleCard, C.Border, 0.48)
 
-makeLabel(
+label(
     ConsoleCard,
     "ACTIVITY LOG",
     UDim2.fromOffset(13, 7),
@@ -1007,24 +1011,15 @@ makeLabel(
     C.Muted
 )
 
-create("Frame", {
-    Position = UDim2.fromOffset(13, 29),
-
-    Size = UDim2.new(1, -26, 0, 1),
-
-    BackgroundColor3 = C.Border,
-
-    BackgroundTransparency = .6,
-
-    BorderSizePixel = 0,
-
-    Parent = ConsoleCard
-})
-
 local Console = create("TextLabel", {
-    Position = UDim2.fromOffset(13, 37),
+    Position = UDim2.fromOffset(13, 33),
 
-    Size = UDim2.new(1, -26, 1, -47),
+    Size = UDim2.new(
+        1,
+        -26,
+        1,
+        -42
+    ),
 
     BackgroundTransparency = 1,
 
@@ -1036,11 +1031,8 @@ local Console = create("TextLabel", {
 
     TextColor3 = C.Text2,
 
-    TextXAlignment =
-        Enum.TextXAlignment.Left,
-
-    TextYAlignment =
-        Enum.TextYAlignment.Top,
+    TextXAlignment = Enum.TextXAlignment.Left,
+    TextYAlignment = Enum.TextYAlignment.Top,
 
     TextWrapped = true,
 
@@ -1054,33 +1046,58 @@ local Console = create("TextLabel", {
 local ActionBar = create("Frame", {
     AnchorPoint = Vector2.new(0, 1),
 
-    Position = UDim2.new(0, 0, 1, 0),
+    Position = UDim2.new(
+        0,
+        0,
+        1,
+        0
+    ),
 
-    Size = UDim2.new(1, 0, 0, 47),
+    Size = UDim2.new(
+        1,
+        0,
+        0,
+        47
+    ),
 
     BackgroundTransparency = 1,
 
     Parent = Content
 })
 
-local DumpButton = makeButton(
+local DumpButton = button(
     ActionBar,
     "START FULL CLIENT DUMP",
     UDim2.fromOffset(0, 0),
-    UDim2.new(.66, -5, 1, 0),
+    UDim2.new(
+        0.66,
+        -5,
+        1,
+        0
+    ),
     C.Blue
 )
 
-local RemoteButton = makeButton(
+local RemoteButton = button(
     ActionBar,
-    "REMOTE LIVE",
-    UDim2.new(.66, 5, 0, 0),
-    UDim2.new(.34, -5, 1, 0),
+    "START REMOTE LIVE",
+    UDim2.new(
+        0.66,
+        5,
+        0,
+        0
+    ),
+    UDim2.new(
+        0.34,
+        -5,
+        1,
+        0
+    ),
     C.Surface2
 )
 
 --==============================================================
--- TOAST NOTIFICATIONS
+-- TOAST
 --==============================================================
 
 local ToastHolder = create("Frame", {
@@ -1088,15 +1105,12 @@ local ToastHolder = create("Frame", {
 
     Position = UDim2.new(
         1,
-        -16,
+        -14,
         0,
-        16
+        14
     ),
 
-    Size = UDim2.fromOffset(
-        300,
-        450
-    ),
+    Size = UDim2.fromOffset(290, 400),
 
     BackgroundTransparency = 1,
 
@@ -1109,42 +1123,43 @@ create("UIListLayout", {
     HorizontalAlignment =
         Enum.HorizontalAlignment.Right,
 
-    VerticalAlignment =
-        Enum.VerticalAlignment.Top,
-
     SortOrder =
         Enum.SortOrder.LayoutOrder,
 
     Parent = ToastHolder
 })
 
+local ToastScale = create("UIScale", {
+    Scale = 1,
+    Parent = ToastHolder
+})
+
 local ToastOrder = 0
 
 local function notify(
-    titleValue,
+    titleText,
     message,
-    kind,
-    duration
+    kind
 )
     ToastOrder += 1
 
-    local accentColor = C.Blue
+    local accent = C.Blue
 
     if kind == "success" then
-        accentColor = C.Green
+        accent = C.Green
+
     elseif kind == "error" then
-        accentColor = C.Red
+        accent = C.Red
+
     elseif kind == "warning" then
-        accentColor = C.Yellow
+        accent = C.Yellow
+
     elseif kind == "live" then
-        accentColor = C.Cyan
+        accent = C.Cyan
     end
 
     local toast = create("Frame", {
-        Size = UDim2.fromOffset(
-            286,
-            72
-        ),
+        Size = UDim2.fromOffset(280, 68),
 
         BackgroundColor3 = C.Surface,
 
@@ -1155,174 +1170,103 @@ local function notify(
         Parent = ToastHolder
     })
 
-    addCorner(toast, 12)
+    corner(toast, 11)
+    stroke(toast, C.Border, 0.25)
 
-    local toastStroke =
-        addStroke(
-            toast,
-            C.Border,
-            .25
-        )
+    local bar = create("Frame", {
+        Position = UDim2.fromOffset(0, 9),
 
-    local accent = create("Frame", {
-        Position = UDim2.fromOffset(
-            0,
-            10
-        ),
+        Size = UDim2.fromOffset(3, 50),
 
-        Size = UDim2.fromOffset(
-            3,
-            52
-        ),
-
-        BackgroundColor3 =
-            accentColor,
+        BackgroundColor3 = accent,
 
         BorderSizePixel = 0,
 
         Parent = toast
     })
 
-    addCorner(accent, 5)
+    corner(bar, 3)
 
-    local statusMark =
-        create("Frame", {
-            Position =
-                UDim2.fromOffset(
-                    14,
-                    18
-                ),
+    local dot = create("Frame", {
+        Position = UDim2.fromOffset(14, 17),
 
-            Size =
-                UDim2.fromOffset(
-                    8,
-                    8
-                ),
+        Size = UDim2.fromOffset(7, 7),
 
-            BackgroundColor3 =
-                accentColor,
+        BackgroundColor3 = accent,
 
-            BorderSizePixel = 0,
+        BorderSizePixel = 0,
 
-            Parent = toast
-        })
+        Parent = toast
+    })
 
-    addCorner(statusMark, 100)
+    corner(dot, 100)
 
-    makeLabel(
+    label(
         toast,
-        titleValue,
-        UDim2.fromOffset(31, 9),
-        UDim2.new(1, -43, 0, 22),
+        titleText,
+        UDim2.fromOffset(30, 8),
+        UDim2.new(1, -40, 0, 20),
         Enum.Font.GothamBold,
         10,
         C.Text
     )
 
-    local toastMessage =
-        makeLabel(
-            toast,
-            message,
-            UDim2.fromOffset(31, 30),
-            UDim2.new(1, -43, 0, 32),
-            Enum.Font.Gotham,
-            8,
-            C.Muted
-        )
+    local msg = label(
+        toast,
+        message,
+        UDim2.fromOffset(30, 29),
+        UDim2.new(1, -40, 0, 30),
+        Enum.Font.Gotham,
+        8,
+        C.Muted
+    )
 
-    toastMessage.TextWrapped = true
-
-    toastMessage.TextYAlignment =
+    msg.TextWrapped = true
+    msg.TextYAlignment =
         Enum.TextYAlignment.Top
 
-    local toastScale =
-        create("UIScale", {
-            Scale = .92,
-            Parent = toast
-        })
-
-    toast.BackgroundTransparency = 1
-
-    TweenService:Create(
-        toastScale,
-        TweenInfo.new(
-            .22,
-            Enum.EasingStyle.Quart,
-            Enum.EasingDirection.Out
-        ),
-        {
-            Scale = 1
-        }
-    ):Play()
-
-    TweenService:Create(
-        toast,
-        TweenInfo.new(.18),
-        {
-            BackgroundTransparency = 0
-        }
-    ):Play()
-
-    task.delay(
-        duration or 4,
-        function()
-
-            if not toast.Parent then
-                return
-            end
-
-            TweenService:Create(
-                toastScale,
-                TweenInfo.new(.16),
-                {
-                    Scale = .94
-                }
-            ):Play()
-
-            TweenService:Create(
-                toast,
-                TweenInfo.new(.16),
-                {
-                    BackgroundTransparency = 1
-                }
-            ):Play()
-
-            TweenService:Create(
-                toastStroke,
-                TweenInfo.new(.16),
-                {
-                    Transparency = 1
-                }
-            ):Play()
-
-            task.wait(.18)
-
-            if toast then
-                toast:Destroy()
-            end
+    task.delay(4, function()
+        if not toast.Parent then
+            return
         end
-    )
+
+        TweenService:Create(
+            toast,
+            TweenInfo.new(0.18),
+            {
+                BackgroundTransparency = 1
+            }
+        ):Play()
+
+        task.wait(0.2)
+
+        if toast then
+            toast:Destroy()
+        end
+    end)
 end
 
 --==============================================================
--- CONSOLE FUNCTIONS
+-- LOGGING
 --==============================================================
 
 local ConsoleLines = {}
 
 local function log(message)
-    local timeText =
-        os.date("%H:%M:%S")
+    local line =
+        "[" ..
+        os.date("%H:%M:%S") ..
+        "] " ..
+        tostring(message)
 
     table.insert(
         ConsoleLines,
-        "["
-            .. timeText
-            .. "] "
-            .. tostring(message)
+        line
     )
 
-    while #ConsoleLines > 13 do
+    while #ConsoleLines >
+        CONFIG.MaxConsoleLines
+    do
         table.remove(
             ConsoleLines,
             1
@@ -1330,48 +1274,25 @@ local function log(message)
     end
 
     Console.Text =
-        "> "
-        .. table.concat(
+        "> " ..
+        table.concat(
             ConsoleLines,
             "\n> "
         )
 end
 
-ClearButton.MouseButton1Click:Connect(
-    function()
-
-        table.clear(
-            ConsoleLines
-        )
-
-        Console.Text =
-            "> Console cleared"
-
-        notify(
-            "Console cleared",
-            "Activity output has been reset.",
-            "success",
-            2.5
-        )
-    end
-)
-
---==============================================================
--- STATUS FUNCTIONS
---==============================================================
-
 local function setStatus(
-    titleValue,
-    detailValue,
+    titleText,
+    detailText,
     color
 )
     color = color or C.Green
 
-    Status.Text = titleValue
+    Status.Text = titleText
     Status.TextColor3 = color
 
     Detail.Text =
-        detailValue or ""
+        detailText or ""
 
     StatusDot.BackgroundColor3 =
         color
@@ -1387,11 +1308,7 @@ local function setProgress(value)
 
     TweenService:Create(
         Progress,
-        TweenInfo.new(
-            .22,
-            Enum.EasingStyle.Quart,
-            Enum.EasingDirection.Out
-        ),
+        TweenInfo.new(0.15),
         {
             Size =
                 UDim2.fromScale(
@@ -1403,59 +1320,959 @@ local function setProgress(value)
 end
 
 --==============================================================
--- FIX: DRAGGING UI SHOULD NOT ROTATE GAME CAMERA
+-- SERIALIZER
+--==============================================================
+
+local function safeString(value)
+    local t = typeof(value)
+
+    if t == "string" then
+        local text = value
+
+        if #text > 500 then
+            text =
+                text:sub(1, 500)
+                .. "...[truncated]"
+        end
+
+        return string.format("%q", text)
+
+    elseif t == "Instance" then
+        local ok, fullName =
+            pcall(function()
+                return value:GetFullName()
+            end)
+
+        return ok
+            and fullName
+            or value.Name
+
+    elseif t == "Vector3"
+        or t == "Vector2"
+        or t == "CFrame"
+        or t == "Color3"
+        or t == "UDim2"
+        or t == "UDim"
+    then
+        return tostring(value)
+
+    elseif t == "table" then
+        return "{table}"
+
+    else
+        return tostring(value)
+    end
+end
+
+local function serializeArgs(...)
+    local args = table.pack(...)
+
+    local output = {}
+
+    for i = 1, args.n do
+        output[#output + 1] =
+            "[" ..
+            i ..
+            "]=" ..
+            safeString(args[i])
+    end
+
+    return table.concat(
+        output,
+        ", "
+    )
+end
+
+--==============================================================
+-- OBJECT PATH
+--==============================================================
+
+local function objectPath(object)
+    local ok, result =
+        pcall(function()
+            return object:GetFullName()
+        end)
+
+    if ok then
+        return result
+    end
+
+    return object.Name
+end
+
+--==============================================================
+-- DUMP ENGINE
+--==============================================================
+
+local function inspectObject(object, output)
+    if object == GUI
+        or object:IsDescendantOf(GUI)
+    then
+        return
+    end
+
+    State.Instances += 1
+
+    local className =
+        object.ClassName
+
+    local path =
+        objectPath(object)
+
+    output[#output + 1] =
+        string.format(
+            "[%s] %s",
+            className,
+            path
+        )
+
+    -- Scripts
+    if object:IsA("LocalScript")
+        or object:IsA("ModuleScript")
+    then
+        State.Scripts += 1
+
+        output[#output + 1] =
+            "  Script.Enabled="
+            .. tostring(
+                not object:IsA("LocalScript")
+                or object.Enabled
+            )
+
+        local okSource, source =
+            pcall(function()
+                return object.Source
+            end)
+
+        if okSource
+            and source
+            and source ~= ""
+        then
+            output[#output + 1] =
+                "  SourceLength="
+                .. tostring(#source)
+        end
+    end
+
+    -- Remotes
+    if object:IsA("RemoteEvent")
+        or object:IsA("RemoteFunction")
+        or object:IsA("BindableEvent")
+        or object:IsA("BindableFunction")
+    then
+        State.Remotes += 1
+    end
+
+    -- ValueBase
+    if object:IsA("ValueBase") then
+        local ok, value =
+            pcall(function()
+                return object.Value
+            end)
+
+        if ok then
+            output[#output + 1] =
+                "  Value="
+                .. safeString(value)
+        end
+    end
+
+    -- Attributes
+    local okAttributes, attributes =
+        pcall(function()
+            return object:GetAttributes()
+        end)
+
+    if okAttributes
+        and next(attributes)
+    then
+        for name, value in pairs(attributes) do
+            output[#output + 1] =
+                "  Attribute."
+                .. tostring(name)
+                .. "="
+                .. safeString(value)
+        end
+    end
+
+    -- Tags
+    local okTags, tags =
+        pcall(function()
+            return CollectionService:GetTags(
+                object
+            )
+        end)
+
+    if okTags and #tags > 0 then
+        output[#output + 1] =
+            "  Tags="
+            .. table.concat(tags, ",")
+    end
+
+    -- BasePart
+    if object:IsA("BasePart") then
+        output[#output + 1] =
+            "  Position="
+            .. tostring(object.Position)
+
+        output[#output + 1] =
+            "  Size="
+            .. tostring(object.Size)
+    end
+
+    -- GUI text
+    if object:IsA("TextLabel")
+        or object:IsA("TextButton")
+        or object:IsA("TextBox")
+    then
+        if object.Text ~= "" then
+            output[#output + 1] =
+                "  Text="
+                .. safeString(object.Text)
+        end
+    end
+
+    -- Sound
+    if object:IsA("Sound") then
+        output[#output + 1] =
+            "  SoundId="
+            .. tostring(object.SoundId)
+    end
+
+    -- Animation
+    if object:IsA("Animation") then
+        output[#output + 1] =
+            "  AnimationId="
+            .. tostring(
+                object.AnimationId
+            )
+    end
+
+    -- Prompt
+    if object:IsA(
+        "ProximityPrompt"
+    ) then
+        output[#output + 1] =
+            "  ActionText="
+            .. safeString(
+                object.ActionText
+            )
+
+        output[#output + 1] =
+            "  ObjectText="
+            .. safeString(
+                object.ObjectText
+            )
+    end
+end
+
+local function performDump()
+    if State.Dumping then
+        notify(
+            "Dump already running",
+            "Wait for the current scan to finish.",
+            "warning"
+        )
+
+        return
+    end
+
+    State.Dumping = true
+
+    State.Instances = 0
+    State.Scripts = 0
+    State.Remotes = 0
+
+    InstanceStat.Text = "0"
+    ScriptStat.Text = "0"
+    RemoteStat.Text = "0"
+
+    DumpButton.Text =
+        "SCANNING..."
+
+    setStatus(
+        "SCANNING",
+        "Collecting client-visible instances",
+        C.Blue
+    )
+
+    setProgress(0)
+
+    log("Full client dump started")
+
+    task.spawn(function()
+        local ok, err =
+            pcall(function()
+
+                local roots = {}
+
+                local serviceNames = {
+                    "ReplicatedStorage",
+                    "ReplicatedFirst",
+                    "Lighting",
+                    "SoundService",
+                    "Workspace"
+                }
+
+                for _, serviceName
+                    in ipairs(serviceNames)
+                do
+                    local okService, service =
+                        pcall(function()
+                            return game:GetService(
+                                serviceName
+                            )
+                        end)
+
+                    if okService and service then
+                        roots[#roots + 1] =
+                            service
+                    end
+                end
+
+                local playerScripts =
+                    Player:FindFirstChild(
+                        "PlayerScripts"
+                    )
+
+                local backpack =
+                    Player:FindFirstChild(
+                        "Backpack"
+                    )
+
+                if playerScripts then
+                    roots[#roots + 1] =
+                        playerScripts
+                end
+
+                if PlayerGui then
+                    roots[#roots + 1] =
+                        PlayerGui
+                end
+
+                if backpack then
+                    roots[#roots + 1] =
+                        backpack
+                end
+
+                if Player.Character then
+                    roots[#roots + 1] =
+                        Player.Character
+                end
+
+                local objects = {}
+
+                for _, root
+                    in ipairs(roots)
+                do
+                    objects[#objects + 1] =
+                        root
+
+                    local okDesc, descendants =
+                        pcall(function()
+                            return root:GetDescendants()
+                        end)
+
+                    if okDesc then
+                        for _, object
+                            in ipairs(descendants)
+                        do
+                            if object ~= GUI
+                                and not object:IsDescendantOf(GUI)
+                            then
+                                objects[#objects + 1] =
+                                    object
+                            end
+                        end
+                    end
+                end
+
+                local output = {
+                    "==============================================",
+                    "DEVIL DUMP V4.2",
+                    "PlaceId = " .. tostring(game.PlaceId),
+                    "Player = " .. tostring(Player.Name),
+                    "Time = " .. os.date("%Y-%m-%d %H:%M:%S"),
+                    "==============================================",
+                    ""
+                }
+
+                local total =
+                    math.max(#objects, 1)
+
+                for index, object
+                    in ipairs(objects)
+                do
+                    inspectObject(
+                        object,
+                        output
+                    )
+
+                    if index % 150 == 0
+                        or index == total
+                    then
+                        InstanceStat.Text =
+                            tostring(
+                                State.Instances
+                            )
+
+                        ScriptStat.Text =
+                            tostring(
+                                State.Scripts
+                            )
+
+                        RemoteStat.Text =
+                            tostring(
+                                State.Remotes
+                            )
+
+                        setProgress(
+                            index / total
+                        )
+
+                        Detail.Text =
+                            string.format(
+                                "%d / %d objects",
+                                index,
+                                total
+                            )
+
+                        task.wait()
+                    end
+                end
+
+                output[#output + 1] = ""
+                output[#output + 1] =
+                    "=============================================="
+
+                output[#output + 1] =
+                    "Instances = "
+                    .. State.Instances
+
+                output[#output + 1] =
+                    "Scripts = "
+                    .. State.Scripts
+
+                output[#output + 1] =
+                    "Remotes = "
+                    .. State.Remotes
+
+                output[#output + 1] =
+                    "=============================================="
+
+                local fileName =
+                    CONFIG.Folder
+                    .. "/DevilDump_"
+                    .. tostring(game.PlaceId)
+                    .. "_"
+                    .. os.date("%Y%m%d_%H%M%S")
+                    .. ".txt"
+
+                State.LastDumpFile =
+                    fileName
+
+                if FILE_SUPPORT then
+                    ensureFolder()
+
+                    writefile(
+                        fileName,
+                        table.concat(
+                            output,
+                            "\n"
+                        )
+                    )
+                end
+            end)
+
+        State.Dumping = false
+
+        DumpButton.Text =
+            "START FULL CLIENT DUMP"
+
+        if ok then
+            setProgress(1)
+
+            setStatus(
+                "COMPLETE",
+                FILE_SUPPORT
+                    and State.LastDumpFile
+                    or "Scan complete - file API unavailable",
+                C.Green
+            )
+
+            log(
+                "Dump complete | "
+                .. State.Instances
+                .. " instances"
+            )
+
+            notify(
+                "Dump completed",
+                FILE_SUPPORT
+                    and (
+                        State.Instances
+                        .. " objects saved."
+                    )
+                    or (
+                        State.Instances
+                        .. " objects scanned."
+                    ),
+                "success"
+            )
+
+        else
+            setStatus(
+                "ERROR",
+                tostring(err),
+                C.Red
+            )
+
+            log(
+                "Dump error: "
+                .. tostring(err)
+            )
+
+            notify(
+                "Dump failed",
+                tostring(err),
+                "error"
+            )
+        end
+    end)
+end
+
+--==============================================================
+-- PASSIVE REMOTE LIVE
 --
--- Main changes:
---   1. Drag only starts from Header.
---   2. Uses gameProcessedEvent-aware input.
---   3. Touch movement is tracked by the SAME touch object.
---   4. UI consumes the touch through an invisible drag capture.
---   5. Buttons no longer start dragging.
+-- Only observes incoming RemoteEvent.OnClientEvent
+-- and BindableEvent.Event.
+-- It does not FireServer / InvokeServer.
+--==============================================================
+
+local function saveLive()
+    if not Live.File
+        or not FILE_SUPPORT
+    then
+        return
+    end
+
+    ensureFolder()
+
+    local header = {
+        "==============================================",
+        "DEVIL REMOTE LIVE V4.2",
+        "PlaceId = " .. tostring(game.PlaceId),
+        "Player = " .. tostring(Player.Name),
+        "Entries = " .. tostring(Live.Count),
+        "==============================================",
+        ""
+    }
+
+    local content = {}
+
+    for _, lineText in ipairs(header) do
+        content[#content + 1] =
+            lineText
+    end
+
+    for _, lineText
+        in ipairs(Live.Entries)
+    do
+        content[#content + 1] =
+            lineText
+    end
+
+    pcall(function()
+        writefile(
+            Live.File,
+            table.concat(
+                content,
+                "\n"
+            )
+        )
+    end)
+end
+
+local function liveRecord(
+    kind,
+    remote,
+    ...
+)
+    if not Live.Enabled then
+        return
+    end
+
+    Live.Count += 1
+
+    local entry =
+        string.format(
+            "[%s] [%s] %s | %s",
+            os.date("%H:%M:%S"),
+            kind,
+            objectPath(remote),
+            serializeArgs(...)
+        )
+
+    table.insert(
+        Live.Entries,
+        entry
+    )
+
+    while #Live.Entries >
+        CONFIG.MaxLiveEntries
+    do
+        table.remove(
+            Live.Entries,
+            1
+        )
+    end
+
+    LiveStat.Text =
+        tostring(Live.Count)
+
+    LiveCountText.Text =
+        tostring(Live.Count)
+        .. " events captured"
+
+    log(
+        kind
+        .. " | "
+        .. remote.Name
+    )
+
+    if Live.Count %
+        CONFIG.AutoSaveEvery == 0
+    then
+        saveLive()
+    end
+end
+
+local function registerLiveObject(object)
+    if Live.Registered[object] then
+        return
+    end
+
+    if object == GUI
+        or object:IsDescendantOf(GUI)
+    then
+        return
+    end
+
+    if object:IsA("RemoteEvent") then
+        Live.Registered[object] =
+            true
+
+        local connection =
+            object.OnClientEvent:Connect(
+                function(...)
+                    liveRecord(
+                        "RemoteEvent",
+                        object,
+                        ...
+                    )
+                end
+            )
+
+        table.insert(
+            Live.Connections,
+            connection
+        )
+
+    elseif object:IsA("BindableEvent") then
+        Live.Registered[object] =
+            true
+
+        local connection =
+            object.Event:Connect(
+                function(...)
+                    liveRecord(
+                        "BindableEvent",
+                        object,
+                        ...
+                    )
+                end
+            )
+
+        table.insert(
+            Live.Connections,
+            connection
+        )
+    end
+end
+
+local function startLive()
+    if Live.Enabled then
+        return
+    end
+
+    Live.Enabled = true
+
+    Live.Count = 0
+    Live.Entries = {}
+    Live.Connections = {}
+    Live.Registered = {}
+
+    Live.File =
+        CONFIG.Folder
+        .. "/RemoteLive_"
+        .. tostring(game.PlaceId)
+        .. "_"
+        .. os.date("%Y%m%d_%H%M%S")
+        .. ".txt"
+
+    LiveStat.Text = "0"
+
+    LiveStateText.Text =
+        "REMOTE LIVE ON"
+
+    LiveStateText.TextColor3 =
+        C.Cyan
+
+    LiveDot.BackgroundColor3 =
+        C.Cyan
+
+    LiveCountText.Text =
+        "0 events captured"
+
+    LiveFileText.Text =
+        FILE_SUPPORT
+            and Live.File
+            or "File API unavailable"
+
+    RemoteButton.Text =
+        "STOP REMOTE LIVE"
+
+    log("Remote Live started")
+
+    setStatus(
+        "REMOTE LIVE",
+        "Listening for incoming client events",
+        C.Cyan
+    )
+
+    local roots = {
+        game:GetService(
+            "ReplicatedStorage"
+        ),
+
+        workspace,
+
+        PlayerGui
+    }
+
+    local playerScripts =
+        Player:FindFirstChild(
+            "PlayerScripts"
+        )
+
+    if playerScripts then
+        roots[#roots + 1] =
+            playerScripts
+    end
+
+    for _, root in ipairs(roots) do
+        registerLiveObject(root)
+
+        for _, object
+            in ipairs(root:GetDescendants())
+        do
+            registerLiveObject(object)
+        end
+
+        local connection =
+            root.DescendantAdded:Connect(
+                function(object)
+                    if Live.Enabled then
+                        registerLiveObject(
+                            object
+                        )
+                    end
+                end
+            )
+
+        table.insert(
+            Live.Connections,
+            connection
+        )
+    end
+
+    notify(
+        "Remote Live started",
+        "Incoming client events are now being monitored.",
+        "live"
+    )
+end
+
+local function stopLive()
+    if not Live.Enabled then
+        return
+    end
+
+    Live.Enabled = false
+
+    saveLive()
+
+    for _, connection
+        in ipairs(Live.Connections)
+    do
+        pcall(function()
+            connection:Disconnect()
+        end)
+    end
+
+    Live.Connections = {}
+    Live.Registered = {}
+
+    LiveStateText.Text =
+        "REMOTE LIVE OFF"
+
+    LiveStateText.TextColor3 =
+        C.Muted
+
+    LiveDot.BackgroundColor3 =
+        C.Muted2
+
+    RemoteButton.Text =
+        "START REMOTE LIVE"
+
+    setStatus(
+        "READY",
+        "Remote Live stopped",
+        C.Green
+    )
+
+    log(
+        "Remote Live stopped | "
+        .. Live.Count
+        .. " events"
+    )
+
+    notify(
+        "Remote Live stopped",
+        tostring(Live.Count)
+            .. " events captured.",
+        "success"
+    )
+end
+
+local function toggleLive()
+    if Live.Enabled then
+        stopLive()
+    else
+        startLive()
+    end
+end
+
+--==============================================================
+-- BUTTON EVENTS
+--==============================================================
+
+DumpButton.MouseButton1Click:Connect(
+    performDump
+)
+
+FullDumpButton.MouseButton1Click:Connect(
+    performDump
+)
+
+RemoteButton.MouseButton1Click:Connect(
+    toggleLive
+)
+
+LiveButton.MouseButton1Click:Connect(
+    toggleLive
+)
+
+ClearButton.MouseButton1Click:Connect(
+    function()
+        table.clear(ConsoleLines)
+
+        Console.Text =
+            "> Console cleared"
+
+        notify(
+            "Console cleared",
+            "Activity output reset.",
+            "success"
+        )
+    end
+)
+
+--==============================================================
+-- FLOATING REOPEN BUTTON
+--==============================================================
+
+local Floating = create("TextButton", {
+    AnchorPoint = Vector2.new(1, 0.5),
+
+    Position = UDim2.new(
+        1,
+        -14,
+        0.5,
+        0
+    ),
+
+    Size = UDim2.fromOffset(48, 48),
+
+    BackgroundColor3 = C.Surface,
+
+    BorderSizePixel = 0,
+
+    Text = "D",
+
+    Font = Enum.Font.GothamBold,
+
+    TextSize = 17,
+    TextColor3 = C.Text,
+
+    AutoButtonColor = false,
+
+    Visible = false,
+
+    Parent = GUI
+})
+
+corner(Floating, 14)
+stroke(Floating, C.Blue, 0.2)
+
+local function setVisible(value)
+    Root.Visible = value
+    Floating.Visible = not value
+end
+
+Close.MouseButton1Click:Connect(
+    function()
+        setVisible(false)
+    end
+)
+
+Floating.MouseButton1Click:Connect(
+    function()
+        setVisible(true)
+
+        updateScale()
+    end
+)
+
+--==============================================================
+-- DRAG
 --==============================================================
 
 local Dragging = false
 local DragInput = nil
-local DragStart = nil
-local StartPosition = nil
 
-local DragCapture = create("TextButton", {
-    Name = "DragCapture",
+local DragStart
+local StartPosition
 
-    Position = UDim2.new(),
-    Size = UDim2.fromScale(1, 1),
-
-    BackgroundTransparency = 1,
-
-    Text = "",
-
-    AutoButtonColor = false,
-
-    Active = true,
-    Selectable = false,
-
-    ZIndex = 0,
-
-    Parent = Header
-})
-
--- Keep real header controls above capture layer.
-BrandIcon.ZIndex = 2
-Close.ZIndex = 3
-Version.ZIndex = 2
-
-for _, child in ipairs(Header:GetChildren()) do
-    if child:IsA("TextLabel") then
-        child.ZIndex = 2
-    end
-end
-
-DragCapture.InputBegan:Connect(
+DragArea.InputBegan:Connect(
     function(input)
+        local inputType =
+            input.UserInputType
 
-        if input.UserInputType
-                ~= Enum.UserInputType.MouseButton1
-            and input.UserInputType
+        if inputType
                 ~= Enum.UserInputType.Touch
+            and inputType
+                ~= Enum.UserInputType.MouseButton1
         then
             return
         end
@@ -1469,43 +2286,31 @@ DragCapture.InputBegan:Connect(
         StartPosition =
             Root.Position
 
-        input.Changed:Connect(
-            function()
-
-                if input.UserInputState
-                    == Enum.UserInputState.End
-                then
-                    Dragging = false
-                    DragInput = nil
-                end
+        input.Changed:Connect(function()
+            if input.UserInputState
+                == Enum.UserInputState.End
+            then
+                Dragging = false
+                DragInput = nil
             end
-        )
+        end)
     end
 )
 
 UserInputService.InputChanged:Connect(
     function(input)
-
-        if not Dragging then
+        if not Dragging
+            or not DragInput
+        then
             return
         end
 
-        ------------------------------------------------------
-        -- Touch:
-        -- only react to the finger that started dragging.
-        ------------------------------------------------------
-
-        if DragInput
-            and DragInput.UserInputType
-                == Enum.UserInputType.Touch
+        if DragInput.UserInputType
+            == Enum.UserInputType.Touch
         then
             if input ~= DragInput then
                 return
             end
-
-        ------------------------------------------------------
-        -- Mouse:
-        ------------------------------------------------------
 
         elseif input.UserInputType
             ~= Enum.UserInputType.MouseMovement
@@ -1531,13 +2336,10 @@ UserInputService.InputChanged:Connect(
 )
 
 --==============================================================
--- SCREEN CLAMP
---
--- Prevent dragging the UI completely off screen.
--- Works after scaling.
+-- CLAMP WINDOW
 --==============================================================
 
-local function clampWindowToScreen()
+local function clampWindow()
     local camera =
         workspace.CurrentCamera
 
@@ -1548,189 +2350,93 @@ local function clampWindowToScreen()
     local viewport =
         camera.ViewportSize
 
-    local scaleValue =
+    local scale =
         UIScaleObject.Scale
 
-    local windowWidth =
-        BASE_WIDTH
-        * scaleValue
+    local width =
+        CONFIG.BaseWidth
+        * scale
 
-    local windowHeight =
-        BASE_HEIGHT
-        * scaleValue
+    local height =
+        CONFIG.BaseHeight
+        * scale
 
     local centerX =
         viewport.X
-        * Root.Position.X.Scale
+            * Root.Position.X.Scale
         + Root.Position.X.Offset
 
     local centerY =
         viewport.Y
-        * Root.Position.Y.Scale
+            * Root.Position.Y.Scale
         + Root.Position.Y.Offset
 
-    local halfW =
-        windowWidth / 2
-
-    local halfH =
-        windowHeight / 2
+    local halfW = width / 2
+    local halfH = height / 2
 
     local margin = 8
 
-    centerX =
-        math.clamp(
-            centerX,
-            halfW + margin,
-            viewport.X
-                - halfW
-                - margin
-        )
+    local minX =
+        halfW + margin
 
-    centerY =
-        math.clamp(
-            centerY,
-            halfH + margin,
-            viewport.Y
-                - halfH
-                - margin
-        )
+    local maxX =
+        viewport.X
+        - halfW
+        - margin
+
+    local minY =
+        halfH + margin
+
+    local maxY =
+        viewport.Y
+        - halfH
+        - margin
+
+    if minX <= maxX then
+        centerX =
+            math.clamp(
+                centerX,
+                minX,
+                maxX
+            )
+    else
+        centerX =
+            viewport.X / 2
+    end
+
+    if minY <= maxY then
+        centerY =
+            math.clamp(
+                centerY,
+                minY,
+                maxY
+            )
+    else
+        centerY =
+            viewport.Y / 2
+    end
+
+    Root.AnchorPoint =
+        Vector2.new(0.5, 0.5)
 
     Root.Position =
         UDim2.fromOffset(
             centerX,
             centerY
         )
-
-    Root.AnchorPoint =
-        Vector2.new(.5, .5)
 end
 
 UserInputService.InputEnded:Connect(
     function(input)
-
         if input == DragInput
             or input.UserInputType
                 == Enum.UserInputType.MouseButton1
         then
-
             Dragging = false
             DragInput = nil
 
-            clampWindowToScreen()
+            clampWindow()
         end
-    end
-)
-
---==============================================================
--- FLOATING REOPEN BUTTON
--- No emoji. Simple D mark.
---==============================================================
-
-local Floating = create(
-    "TextButton",
-    {
-        AnchorPoint =
-            Vector2.new(1, .5),
-
-        Position =
-            UDim2.new(
-                1,
-                -15,
-                .5,
-                0
-            ),
-
-        Size =
-            UDim2.fromOffset(
-                48,
-                48
-            ),
-
-        BackgroundColor3 =
-            C.Surface,
-
-        BorderSizePixel = 0,
-
-        Text = "D",
-
-        Font =
-            Enum.Font.GothamBold,
-
-        TextSize = 17,
-
-        TextColor3 =
-            C.Text,
-
-        AutoButtonColor = false,
-
-        Visible = false,
-
-        Parent = GUI
-    }
-)
-
-addCorner(
-    Floating,
-    14
-)
-
-addStroke(
-    Floating,
-    C.Blue,
-    .2,
-    1
-)
-
-create(
-    "UIGradient",
-    {
-        Rotation = 45,
-
-        Color =
-            ColorSequence.new({
-                ColorSequenceKeypoint.new(
-                    0,
-                    Color3.fromRGB(
-                        17,
-                        25,
-                        48
-                    )
-                ),
-
-                ColorSequenceKeypoint.new(
-                    1,
-                    Color3.fromRGB(
-                        27,
-                        20,
-                        53
-                    )
-                )
-            }),
-
-        Parent = Floating
-    }
-)
-
-local function setMainVisible(value)
-    Root.Visible = value
-    Floating.Visible = not value
-end
-
-Close.MouseButton1Click:Connect(
-    function()
-        setMainVisible(false)
-    end
-)
-
-Floating.MouseButton1Click:Connect(
-    function()
-        setMainVisible(true)
-
-        calculateResponsiveScale()
-
-        task.defer(
-            clampWindowToScreen
-        )
     end
 )
 
@@ -1740,7 +2446,6 @@ Floating.MouseButton1Click:Connect(
 
 UserInputService.InputBegan:Connect(
     function(input, processed)
-
         if processed then
             return
         end
@@ -1748,74 +2453,21 @@ UserInputService.InputBegan:Connect(
         if input.KeyCode
             == CONFIG.ToggleKey
         then
-
-            setMainVisible(
+            setVisible(
                 not Root.Visible
             )
-
-            if Root.Visible then
-                calculateResponsiveScale()
-
-                task.defer(
-                    clampWindowToScreen
-                )
-            end
         end
     end
 )
 
 --==============================================================
--- ORIENTATION / RESOLUTION WATCH
---
--- iPhone / Android / tablet / emulator:
--- UI recalculates itself whenever viewport changes.
+-- VIEWPORT / MOBILE ORIENTATION
 --==============================================================
 
 local LastViewport =
-    Vector2.new()
+    Vector2.new(-1, -1)
 
-RunService.Heartbeat:Connect(
-    function()
-
-        local camera =
-            workspace.CurrentCamera
-
-        if not camera then
-            return
-        end
-
-        local current =
-            camera.ViewportSize
-
-        if current ~= LastViewport then
-
-            LastViewport =
-                current
-
-            calculateResponsiveScale()
-
-            task.defer(
-                clampWindowToScreen
-            )
-        end
-    end
-)
-
---==============================================================
--- MOBILE TOAST SCALE
---==============================================================
-
-local ToastScale =
-    create(
-        "UIScale",
-        {
-            Scale = 1,
-            Parent = ToastHolder
-        }
-    )
-
-local function updateToastScale()
-
+local function updateResponsive()
     local camera =
         workspace.CurrentCamera
 
@@ -1826,85 +2478,119 @@ local function updateToastScale()
     local viewport =
         camera.ViewportSize
 
-    if viewport.X < 650 then
+    if viewport == LastViewport then
+        return
+    end
 
-        ToastScale.Scale = .72
+    LastViewport = viewport
+
+    updateScale()
+
+    if viewport.X < 650 then
+        ToastScale.Scale = 0.70
 
     elseif viewport.X < 900 then
-
-        ToastScale.Scale = .82
+        ToastScale.Scale = 0.82
 
     else
-
         ToastScale.Scale = 1
     end
+
+    -- Re-center after orientation change.
+    centerWindow()
 end
 
-updateToastScale()
+RunService.Heartbeat:Connect(
+    updateResponsive
+)
+
+workspace:GetPropertyChangedSignal(
+    "CurrentCamera"
+):Connect(function()
+    task.wait()
+
+    updateResponsive()
+end)
 
 --==============================================================
--- LIVE INDICATOR ANIMATION
+-- LIVE PULSE
 --==============================================================
 
-task.spawn(
-    function()
+task.spawn(function()
+    while GUI.Parent do
+        if Live.Enabled then
+            TweenService:Create(
+                LiveDot,
+                TweenInfo.new(0.35),
+                {
+                    BackgroundTransparency =
+                        0.55
+                }
+            ):Play()
 
-        while GUI.Parent do
+            task.wait(0.35)
 
-            if Live
-                and Live.Enabled
-            then
-
-                TweenService:Create(
-                    LiveDot,
-                    TweenInfo.new(.45),
-                    {
-                        BackgroundTransparency =
-                            .55
-                    }
-                ):Play()
-
-                task.wait(.45)
-
-                if not GUI.Parent then
-                    break
-                end
-
-                TweenService:Create(
-                    LiveDot,
-                    TweenInfo.new(.45),
-                    {
-                        BackgroundTransparency =
-                            0
-                    }
-                ):Play()
-
-                task.wait(.45)
-
-            else
-
-                LiveDot.BackgroundTransparency =
-                    0
-
-                task.wait(.4)
+            if not GUI.Parent then
+                break
             end
+
+            TweenService:Create(
+                LiveDot,
+                TweenInfo.new(0.35),
+                {
+                    BackgroundTransparency =
+                        0
+                }
+            ):Play()
+
+            task.wait(0.35)
+        else
+            LiveDot.BackgroundTransparency =
+                0
+
+            task.wait(0.35)
         end
     end
-)
+end)
 
 --==============================================================
--- INITIAL SCREEN FIT
+-- STARTUP
 --==============================================================
 
-task.defer(
-    function()
+updateResponsive()
 
-        calculateResponsiveScale()
-
-        task.wait()
-
-        clampWindowToScreen()
-
-        updateToastScale()
-    end
+setStatus(
+    "READY",
+    FILE_SUPPORT
+        and "File system ready"
+        or "GUI ready - file API unavailable",
+    C.Green
 )
+
+log("DEVIL DUMP V4.2 loaded")
+log(
+    "Viewport: "
+    .. workspace.CurrentCamera.ViewportSize.X
+    .. "x"
+    .. workspace.CurrentCamera.ViewportSize.Y
+)
+
+if UserInputService.TouchEnabled then
+    log("Mobile / touch mode detected")
+end
+
+if not FILE_SUPPORT then
+    log("Warning: writefile unavailable")
+
+    notify(
+        "Limited file support",
+        "GUI works, but this environment does not expose writefile.",
+        "warning"
+    )
+else
+    notify(
+        "DEVIL DUMP ready",
+        "V4.2 loaded successfully.",
+        "success"
+    )
+end
